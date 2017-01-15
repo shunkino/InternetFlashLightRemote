@@ -68,14 +68,14 @@ var commandSchema = new mongoose.Schema ({
 	pwm: Number 
 });
 
-var ErthquakeDB = new mongoose.Schema ({
-	isErthquake: Boolean
+var EarthquakeDBSchema = new mongoose.Schema ({
+	isEarthquake: Boolean
 });
 
 // db.modelの1つ目の引数がcollection名になる
 var EventData = db.model('data', eventSchema);
 var CommandInfo = db.model('command', commandSchema);
-var ErthquakeDB = db.model('earthquake', commandSchema);
+var EarthquakeDB = db.model('earthquake', EarthquakeDBSchema);
 
 var defaultData = {};
 defaultData.status = 0;
@@ -84,7 +84,7 @@ defaultData.response.pwm = 0;
 defaultData.response.time = 0;
 defaultData.response.reconnect_time = 0;
 
-function insertData(req, res, next) {
+function insertEventData(req, res, next) {
 	var eventDataInstance = new EventData(req.params); 
 	eventDataInstance.save(function(err){
 		if(err) { return; console.log("error ocured"); }
@@ -92,49 +92,58 @@ function insertData(req, res, next) {
 	});
 }
 
-function checkErthquake() {
-	var isErthquake;
-	ErthquakeDB.find("", {}, {sort: {$natural: -1}, limit: 1}, function(err, data){
-		if (err) {
-			console.log(err);
-		}
-		console.log(data);
-		isErthquake = data.isErthquake;
+function sendEarthquakeMsg(res) {
+	var isEarthquake = false;
+	var promise = EarthquakeDB.find("", {}, {sort: {$natural: -1}, limit: 1}).exec();
+	promise.then(function(result) {
+		var isEarthquake = result[0].isEarthquake;	
+		// callback(res, isEarthquake);
+		res.send(generateEarthquakeRespose(isEarthquake));
+		console.log("earthquake state:" + isEarthquake);
+	}).catch(function(error){
+		console.log(error);
 	});
-	return isErthquake;
 } 
 
-function generateErthquakeRespose() {
-	var erthquakeData = {};
-	erthquakeData.status = 0;
-	erthquakeData.response = {};
-	erthquakeData.response.pwm = 100;
-	erthquakeData.response.time = 5;
-	erthquakeData.response.reconnect_time = 0;
-	return erthquakeData;
+function generateEarthquakeRespose(isEarthquake) {
+	var earthquakeData = {};
+	earthquakeData.status = 0;
+	earthquakeData.response = {};
+	if(isEarthquake) {
+		earthquakeData.response.pwm = 100;
+		earthquakeData.response.time = 500;
+	} else {
+		earthquakeData.response.pwm = 0;
+		earthquakeData.response.time = 0;
+	}
+	earthquakeData.response.reconnect_time = 0;
+	return earthquakeData;
 } 
 
-server.get('/flashlight/event', function (req, res, next) {
+server.get('/flashlight/earthquake/:isEarthquake', function(req, res, next) {
+	var earthquakeInstance = new EarthquakeDB(req.params); 
+	earthquakeInstance.save(function(err){
+		if(err) { return; console.log("error ocured"); }
+		console.log("saved to the db.");
+		res.send({result:"ok"});
+	});
+});
 
-}
 server.post('/flashlight/event', function (req, res, next) {
 	var state = req.params;
 	var responseData = {};
 	console.log(state)
 	// 出来てきたら格納機能もオンにする
-	// insertData(req, res, next);
+	insertEventData(req, res, next);
 	switch(state.event_type) {
 		case '0': 
 			console.log("振動イベントです．");			
-			res.send(testdata);
+			res.send(defaultData);
 			break;
 		case '1':
 			console.log("静置イベントです．");
-			// isErthquake と，外部からの呼び出しの比較が必要．
-			isErthquake = checkErthquake();
-			if (isErthquake) {
-				res.send(generateErthquakeRespose());
-			}
+			// isEarthquake と，外部からの呼び出しの比較が必要．
+			sendEarthquakeMsg(res);
 			break;
 		default:
 			console.log("defaultです．");
